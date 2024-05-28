@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capture Image</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        #container {
+            text-align: center;
+        }
+        #camera {
+            width: 640px;
+            height: 480px;
+            border: 1px solid #ccc;
+            margin-bottom: 20px;
+        }
+        #preview {
+            display: none;
+            width: 640px;
+            height: 480px;
+            border: 1px solid #ccc;
+            margin-bottom: 20px;
+        }
+        .buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #captureBtn {
+            background-color: #4CAF50;
+            color: white;
+        }
+        #resetBtn {
+            background-color: #f44336;
+            color: white;
+        }
+        #errorDialog {
+            display: none;
+            position: fixed;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -20%);
+            background-color: #f44336;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+        }
+        #closeErrorBtn {
+            background-color: #fff;
+            color: #f44336;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <video id="camera" autoplay></video>
+        <canvas id="preview" width="640" height="480"></canvas>
+        <div class="buttons">
+            <button id="captureBtn">Capture Image</button>
+            <button id="resetBtn">Reset</button>
+        </div>
+        <div id="errorDialog">
+            <p id="errorMessage"></p>
+            <button id="closeErrorBtn">Close</button>
+        </div>
+    </div>
+
+    <script>
+        const captureBtn = document.getElementById('captureBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const camera = document.getElementById('camera');
+        const preview = document.getElementById('preview');
+        const context = preview.getContext('2d');
+        const errorDialog = document.getElementById('errorDialog');
+        const errorMessage = document.getElementById('errorMessage');
+        const closeErrorBtn = document.getElementById('closeErrorBtn');
+
+        let stream = null;
+
+        navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+            .then(mediaStream => {
+                stream = mediaStream;
+                camera.srcObject = stream;
+            })
+            .catch(err => showError('Error accessing camera: ' + err.message));
+
+        captureBtn.addEventListener('click', () => {
+            const aspectRatio = camera.videoWidth / camera.videoHeight;
+            let width = camera.videoWidth;
+            let height = camera.videoHeight;
+
+            if (aspectRatio > 4 / 3) {
+                width = camera.videoHeight * (4 / 3);
+            } else {
+                height = camera.videoWidth * (3 / 4);
+            }
+
+            const x = (camera.videoWidth - width) / 2;
+            const y = (camera.videoHeight - height) / 2;
+
+            // preview.width = 640;
+            // preview.height = 480;
+            // context.drawImage(camera, x, y, width, height, 0, 0, 640, 480);
+
+            const highResolutionWidth = 640; // double the width
+            const highResolutionHeight = 480; // double the height
+            preview.width = highResolutionWidth;
+            preview.height = highResolutionHeight;
+            context.drawImage(camera, x, y, width, height, 0, 0, highResolutionWidth, highResolutionHeight);
+
+            camera.style.display = 'none';
+            preview.style.display = 'block';
+            const dataUrl = preview.toDataURL('image/png');
+            const base64Image = dataUrl.split(',')[1];
+
+            const payload = {
+                "legalId": "GHA-712962655-9",
+                "imageFormat": "PNG",
+                "imageData": `${base64Image}`
+            };
+
+            fetch('http://localhost:8094/api/card/verify', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => {
+                // if (!response.ok) {
+                //     throw new Error('Network response was not ok');
+                // }
+                return response.json();
+            })
+            .then(data => {
+              if (data?.error?.code){
+                throw new Error(data.message);
+              }
+
+              // Else deliver success message here
+              console.log('Success:', data);
+                // Handle the response data here
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showError('Error: ' + error.message);
+            });
+        });
+
+        resetBtn.addEventListener('click', () => {
+            preview.style.display = 'none';
+            camera.style.display = 'block';
+            preview.getContext('2d').clearRect(0, 0, preview.width, preview.height);
+            if (camera.srcObject) {
+                camera.srcObject.getTracks().forEach(track => track.stop());
+                camera.srcObject = null;
+                stream = null;
+                navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+                    .then(mediaStream => {
+                        stream = mediaStream;
+                        camera.srcObject = stream;
+                    })
+                    .catch(err => showError('Error accessing camera: ' + err.message));
+            }
+        });
+
+        closeErrorBtn.addEventListener('click', () => {
+            errorDialog.style.display = 'none';
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorDialog.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
